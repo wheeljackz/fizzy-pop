@@ -5,7 +5,7 @@ require "json"
 require "optparse"
 require "yaml"
 
-options = { polling: 10, agents: [] }
+options = { polling: nil, agents: [] }
 breadcrumbs = ["begin"]
 
 OptionParser.new do |opts|
@@ -33,9 +33,14 @@ if options[:config]
   options[:url] ||= config["url"]
   options[:webhook_url] ||= config["webhook_url"]
   options[:webhook_token] ||= config["webhook_token"]
-  options[:polling] = config["polling"] if config["polling"] && options[:polling] == 10
+  options[:polling] ||= config["polling"]
 
-  # Load agents from config
+  # Validate and load agents from config
+  config["agents"]&.each_with_index do |agent, i|
+    abort "Agent #{i + 1} missing name in config" unless agent["name"]
+    abort "Agent #{i + 1} missing token in config" unless agent["token"]
+  end
+
   if config["agents"]
     options[:agents] = config["agents"].map do |agent|
       { name: agent["name"], token: agent["token"] }
@@ -54,10 +59,9 @@ abort "No agents configured. Use --token or --config with agents list" if option
 BASE_URL = options[:url]
 WEBHOOK_BASE_URL = options[:webhook_url]
 WEBHOOK_TOKEN = options[:webhook_token]
-POLLING_DURATION = options[:polling]
+POLLING_DURATION = options[:polling] || 10
 DRY_RUN = options[:dry_run]
 VERBOSE = options[:verbose]
-AGENTS = options[:agents]
 
 def debug_request(method, url, headers: {}, body: nil)
   puts "\e[36m--> #{method.upcase} #{url}\e[0m"
@@ -108,7 +112,7 @@ WEBHOOK_HEADERS = {
 webhook_http_client = HTTPX.with(headers: WEBHOOK_HEADERS) if WEBHOOK_TOKEN
 
 # Build agent clients
-agent_clients = AGENTS.map do |agent|
+agent_clients = options[:agents].map do |agent|
   headers = {
     "authorization" => "Bearer #{agent[:token]}",
     "accept" => "application/json",
